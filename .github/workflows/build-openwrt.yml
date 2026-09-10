@@ -74,27 +74,22 @@ jobs:
           CONFIG_TARGET_mvebu_cortexa9=y
           CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=y
 
-          # LuCI
           CONFIG_PACKAGE_luci=y
 
-          # PassWall 1
           CONFIG_PACKAGE_luci-app-passwall=y
           CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
 
-          # Xray / VLESS
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
           CONFIG_PACKAGE_xray-core=y
 
-          # nftables transparent proxy
           CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y
 
-          # IMPORTANT:
           # PassWall uses dnsmasq-full.
-          # dnsmasq and dnsmasq-full must NOT be built together.
+          # Do NOT build the normal dnsmasq package.
           CONFIG_PACKAGE_dnsmasq=n
           CONFIG_PACKAGE_dnsmasq-full=y
 
-          # Do NOT build unnecessary proxy cores.
+          # Disable unnecessary proxy cores.
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Hysteria=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Trojan_Plus=n
@@ -115,27 +110,26 @@ jobs:
         run: |
 
           echo "===== TARGET ====="
-          grep 'CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=' .config
+          grep '^CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=y$' .config
 
           echo "===== PASSWALL ====="
-          grep 'CONFIG_PACKAGE_luci-app-passwall=' .config
+          grep '^CONFIG_PACKAGE_luci-app-passwall=y$' .config
 
           echo "===== XRAY ====="
-          grep 'CONFIG_PACKAGE_xray-core=' .config
+          grep '^CONFIG_PACKAGE_xray-core=y$' .config
 
           echo "===== DNSMASQ ====="
-          grep -E 'CONFIG_PACKAGE_dnsmasq(=|-)'
-          .config || true
+          grep -E '^CONFIG_PACKAGE_dnsmasq(-full)?=' .config || true
 
           echo "===== CHECK DNSMASQ CONFLICT ====="
 
-          if grep -q '^CONFIG_PACKAGE_dnsmasq=y' .config; then
-            echo "ERROR: dnsmasq is enabled together with dnsmasq-full"
+          if grep -q '^CONFIG_PACKAGE_dnsmasq=y$' .config; then
+            echo "ERROR: normal dnsmasq is enabled."
             exit 1
           fi
 
-          if ! grep -q '^CONFIG_PACKAGE_dnsmasq-full=y' .config; then
-            echo "ERROR: dnsmasq-full is not enabled"
+          if ! grep -q '^CONFIG_PACKAGE_dnsmasq-full=y$' .config; then
+            echo "ERROR: dnsmasq-full is not enabled."
             exit 1
           fi
 
@@ -154,9 +148,7 @@ jobs:
       - name: Collect firmware
         run: |
           mkdir -p artifact
-
-          cp openwrt/bin/targets/mvebu/cortexa9/* \
-             artifact/
+          cp openwrt/bin/targets/mvebu/cortexa9/* artifact/
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
