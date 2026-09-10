@@ -148,8 +148,15 @@ jobs:
       - name: Collect firmware
         run: |
           mkdir -p artifact
-          cp openwrt/bin/targets/mvebu/cortexa9/* artifact/
 
+          find openwrt/bin/targets/mvebu/cortexa9 \
+            -maxdepth 1 \
+            -type f \
+            -exec cp {} artifact/ \;
+
+          echo "===== FIRMWARE FILES ====="
+          ls -lh artifact/
+          
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
