@@ -12,16 +12,16 @@ jobs:
 
     steps:
 
-      # --------------------------------------------------
+      # ==================================================
       # 1. Checkout
-      # --------------------------------------------------
+      # ==================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
-      # --------------------------------------------------
+      # ==================================================
       # 2. Install build dependencies
-      # --------------------------------------------------
+      # ==================================================
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -54,12 +54,13 @@ jobs:
             fastjar \
             java-propose-classpath \
             qemu-utils \
-            device-tree-compiler
+            device-tree-compiler \
+            zstd
 
 
-      # --------------------------------------------------
+      # ==================================================
       # 3. Download OpenWrt 23.05.6
-      # --------------------------------------------------
+      # ==================================================
       - name: Download OpenWrt 23.05.6
         run: |
           git clone \
@@ -69,48 +70,66 @@ jobs:
             openwrt
 
 
-      # --------------------------------------------------
-      # 4. Add PassWall2 stable release
+      # ==================================================
+      # 4. Configure PassWall feeds
       #
       # PassWall2:
       # 26.9.9-2
       #
-      # Xray:
-      # 26.9.9
-      #
-      # VLESS is supported by Xray/PassWall2.
-      # --------------------------------------------------
-      - name: Configure PassWall2 feeds
+      # PassWall packages:
+      # pinned to the 2025-09 Xray 25.9.11
+      # compatible generation
+      # ==================================================
+      - name: Configure PassWall feeds
         working-directory: openwrt
         run: |
           cat >> feeds.conf.default <<'EOF'
 
-          src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main
+          src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;f23e172f270c8d54ac45b9aa3d2576cace020eb4
           src-git passwall2 https://github.com/Openwrt-Passwall/openwrt-passwall2.git;26.9.9-2
           EOF
 
 
-      # --------------------------------------------------
+      # ==================================================
       # 5. Update feeds
-      # --------------------------------------------------
+      # ==================================================
       - name: Update feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
 
 
-      # --------------------------------------------------
-      # 6. Install PassWall packages first
-      # --------------------------------------------------
-      - name: Install PassWall dependencies
+      # ==================================================
+      # 6. Update Go for OpenWrt 23.05
+      #
+      # OpenWrt 23.05's original Go is too old.
+      # PassWall's official 23.05 build method recommends
+      # replacing the Go feed with the 25.x branch.
+      # ==================================================
+      - name: Update Go toolchain
+        working-directory: openwrt
+        run: |
+          rm -rf feeds/packages/lang/golang
+
+          git clone \
+            --depth 1 \
+            --branch 25.x \
+            https://github.com/sbwml/packages_lang_golang \
+            feeds/packages/lang/golang
+
+
+      # ==================================================
+      # 7. Install PassWall packages
+      # ==================================================
+      - name: Install PassWall packages
         working-directory: openwrt
         run: |
           ./scripts/feeds install -a -f -p passwall_packages
 
 
-      # --------------------------------------------------
-      # 7. Install PassWall2
-      # --------------------------------------------------
+      # ==================================================
+      # 8. Install PassWall2
+      # ==================================================
       - name: Install PassWall2
         working-directory: openwrt
         run: |
@@ -118,54 +137,84 @@ jobs:
           ./scripts/feeds install luci-i18n-passwall2-zh-cn
 
 
-      # --------------------------------------------------
-      # 8. Configure WRT1200AC V2
-      #
-      # WRT1200AC V1/V2 use:
-      #
-      # target      = mvebu
-      # subtarget   = cortexa9
-      # profile     = linksys_wrt1200ac
-      # --------------------------------------------------
+      # ==================================================
+      # 9. Configure WRT1200AC V2
+      # ==================================================
       - name: Configure OpenWrt
         working-directory: openwrt
         run: |
+
           cat > .config <<'EOF'
 
-          # ------------------------------------------------
+          # =================================================
           # Target
-          # ------------------------------------------------
+          # =================================================
 
           CONFIG_TARGET_mvebu=y
           CONFIG_TARGET_mvebu_cortexa9=y
           CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=y
 
 
-          # ------------------------------------------------
+          # =================================================
           # LuCI
-          # ------------------------------------------------
+          # =================================================
 
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-ssl=y
+
           CONFIG_PACKAGE_luci-app-firewall=y
           CONFIG_PACKAGE_luci-app-opkg=y
 
 
-          # ------------------------------------------------
+          # =================================================
           # PassWall2
-          # ------------------------------------------------
+          # =================================================
 
           CONFIG_PACKAGE_luci-app-passwall2=y
           CONFIG_PACKAGE_luci-i18n-passwall2-zh-cn=y
 
 
-          # ------------------------------------------------
-          # PassWall2 basic dependencies
-          # ------------------------------------------------
+          # =================================================
+          # PassWall2 Core
+          #
+          # ONLY Xray
+          #
+          # VLESS -> Xray
+          #
+          # Sing-box disabled
+          # =================================================
+
+          CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_Xray=y
+          CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_SingBox=n
+          CONFIG_PACKAGE_luci-app-passwall2_Basic_Core_All=n
+
+          CONFIG_PACKAGE_xray-core=y
+
+
+          # =================================================
+          # PassWall2 Transparent Proxy
+          #
+          # OpenWrt 23.05 uses firewall4 / nftables
+          # =================================================
+
+          CONFIG_PACKAGE_luci-app-passwall2_Nftables_Transparent_Proxy=y
+          CONFIG_PACKAGE_luci-app-passwall2_Iptables_Transparent_Proxy=n
+
+          CONFIG_PACKAGE_kmod-nft-socket=y
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_kmod-nft-nat=y
+
+          CONFIG_PACKAGE_dnsmasq-full=y
+
+
+          # =================================================
+          # PassWall2 required packages
+          # =================================================
 
           CONFIG_PACKAGE_coreutils=y
           CONFIG_PACKAGE_coreutils-base64=y
           CONFIG_PACKAGE_coreutils-nohup=y
+          CONFIG_PACKAGE_coreutils-timeout=y
 
           CONFIG_PACKAGE_curl=y
 
@@ -177,42 +226,37 @@ jobs:
 
           CONFIG_PACKAGE_unzip=y
 
-
-          # ------------------------------------------------
-          # Firewall / Transparent Proxy
-          # ------------------------------------------------
-
-          CONFIG_PACKAGE_dnsmasq-full=y
-
-          CONFIG_PACKAGE_kmod-nft-socket=y
-          CONFIG_PACKAGE_kmod-nft-tproxy=y
-          CONFIG_PACKAGE_kmod-nft-nat=y
-
-
-          # ------------------------------------------------
-          # VLESS / Xray
-          #
-          # Xray is the only proxy core built into firmware.
-          #
-          # Sing-box / SSR / Shadowsocks-Rust /
-          # Hysteria / NaiveProxy are NOT built in.
-          # ------------------------------------------------
-
-          CONFIG_PACKAGE_xray-core=y
-
-
-          # ------------------------------------------------
-          # Geo data required by PassWall2
-          # ------------------------------------------------
-
           CONFIG_PACKAGE_v2ray-geoip=y
           CONFIG_PACKAGE_v2ray-geosite=y
           CONFIG_PACKAGE_geoview=y
 
 
-          # ------------------------------------------------
+          # =================================================
+          # Disable unnecessary PassWall2 components
+          #
+          # These are NOT required for your VLESS/Xray node.
+          # =================================================
+
+          CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_Haproxy=n
+
+          CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_Shadowsocks_Rust_Client=n
+          CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_Shadowsocks_Rust_Server=n
+
+          CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_ShadowsocksR_Libev_Client=n
+          CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_ShadowsocksR_Libev_Server=n
+
+          CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_Simple_Obfs=n
+
+          CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_V2ray_Plugin=n
+
+          CONFIG_PACKAGE_v2ray-plugin=n
+
+          CONFIG_PACKAGE_sing-box=n
+
+
+          # =================================================
           # Normal OpenWrt package management
-          # ------------------------------------------------
+          # =================================================
 
           CONFIG_PACKAGE_opkg=y
 
@@ -221,52 +265,67 @@ jobs:
           make defconfig
 
 
-      # --------------------------------------------------
-      # 9. Display important configuration
-      # --------------------------------------------------
-      - name: Show configuration
+      # ==================================================
+      # 10. Verify configuration
+      # ==================================================
+      - name: Verify configuration
         working-directory: openwrt
         run: |
-          echo "========================================"
-          echo "OpenWrt target:"
-          echo "mvebu / cortexa9 / Linksys WRT1200AC"
-          echo "========================================"
 
           echo
-          echo "PassWall2:"
-          grep -E \
-            'PASSWALL|xray-core|v2ray-geoip|v2ray-geosite' \
-            .config || true
+          echo "=============================================="
+          echo "OpenWrt Target"
+          echo "=============================================="
 
-          echo
-          echo "Target:"
           grep -E \
             'CONFIG_TARGET_mvebu|CONFIG_TARGET.*wrt1200ac' \
             .config || true
 
 
-      # --------------------------------------------------
-      # 10. Download sources
-      # --------------------------------------------------
+          echo
+          echo "=============================================="
+          echo "PassWall2 Core"
+          echo "=============================================="
+
+          grep -E \
+            'PASSWALL2|passwall2|xray-core|sing-box|v2ray-plugin' \
+            .config || true
+
+
+          echo
+          echo "=============================================="
+          echo "Go version"
+          echo "=============================================="
+
+          if [ -f feeds/packages/lang/golang/golang-values.mk ]; then
+            grep -E 'GO_VERSION|GO_DEFAULT_VERSION' \
+              feeds/packages/lang/golang/golang-values.mk || true
+          fi
+
+
+      # ==================================================
+      # 11. Download sources
+      # ==================================================
       - name: Download sources
         working-directory: openwrt
         run: |
           make download -j4 V=s
 
 
-      # --------------------------------------------------
-      # 11. Build firmware
-      # --------------------------------------------------
+      # ==================================================
+      # 12. Build firmware
+      # ==================================================
       - name: Build firmware
         working-directory: openwrt
         run: |
           make -j2 V=s
 
 
-      # --------------------------------------------------
-      # 12. Collect firmware
-      # --------------------------------------------------
+      # ==================================================
+      # 13. Collect firmware
+      # ==================================================
       - name: Collect firmware
+        if: success()
         run: |
           mkdir -p firmware
 
@@ -279,31 +338,33 @@ jobs:
             -exec cp {} firmware/ \;
 
 
-      # --------------------------------------------------
-      # 13. Show firmware
-      # --------------------------------------------------
+      # ==================================================
+      # 14. Show firmware information
+      # ==================================================
       - name: Show firmware information
+        if: success()
         run: |
           echo
-          echo "========================================"
-          echo "Firmware files"
-          echo "========================================"
+          echo "=============================================="
+          echo "Firmware"
+          echo "=============================================="
 
           ls -lh firmware/
 
           echo
-          echo "========================================"
+          echo "=============================================="
           echo "SHA256"
-          echo "========================================"
+          echo "=============================================="
 
           cd firmware
           sha256sum * || true
 
 
-      # --------------------------------------------------
-      # 14. Upload firmware
-      # --------------------------------------------------
+      # ==================================================
+      # 15. Upload firmware
+      # ==================================================
       - name: Upload firmware
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: OpenWrt-23.05.6-WRT1200AC-V2-PassWall2-VLESS
