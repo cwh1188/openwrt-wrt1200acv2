@@ -1,4 +1,4 @@
-name: Build OpenWrt 23.05.6 WRT1200AC V2 - PassWall VLESS
+name: Build OpenWrt 23.05.6 WRT1200AC V2 - PassWall 1 VLESS
 
 on:
   push:
@@ -53,13 +53,12 @@ jobs:
             ecj \
             fastjar \
             java-propose-classpath \
-            qemu-utils \
             device-tree-compiler \
             zstd
 
 
       # ==================================================
-      # 3. OpenWrt 23.05.6
+      # 3. Download OpenWrt 23.05.6
       # ==================================================
       - name: Download OpenWrt 23.05.6
         run: |
@@ -71,49 +70,46 @@ jobs:
 
 
       # ==================================================
-      # 4. Add PassWall 1
+      # 4. Configure PassWall package feeds
       #
       # PassWall 1
-      # Xray
-      # VLESS
+      # PassWall packages
+      #
+      # DO NOT use fake branch 25.9.23
       # ==================================================
-      - name: Add PassWall 1
+      - name: Configure PassWall feeds
         working-directory: openwrt
         run: |
 
-          git clone \
-            --depth 1 \
-            --branch 25.9.23 \
-            https://github.com/Openwrt-Passwall/openwrt-passwall.git \
-            package/passwall
+          echo "src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main" >> feeds.conf.default
+
+          echo "src-git passwall https://github.com/Openwrt-Passwall/openwrt-passwall.git;main" >> feeds.conf.default
 
 
       # ==================================================
-      # 5. Update official feeds
+      # 5. Update feeds
       # ==================================================
-      - name: Update OpenWrt feeds
+      - name: Update feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
 
 
       # ==================================================
-      # 6. Install official feeds
+      # 6. Install feeds
       # ==================================================
-      - name: Install OpenWrt feeds
+      - name: Install feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds install -a -f
 
 
       # ==================================================
-      # 7. Replace Go
+      # 7. Replace Go with Go 25.x
       #
-      # OpenWrt 23.05 original Go is too old.
-      #
-      # Xray 25.9.11 requires Go 1.25.x
+      # Required by current Xray
       # ==================================================
-      - name: Update Go 25.x
+      - name: Update Go toolchain
         working-directory: openwrt
         run: |
 
@@ -122,104 +118,12 @@ jobs:
           git clone \
             --depth 1 \
             --branch 25.x \
-            https://github.com/sbwml/packages_lang_golang \
+            https://github.com/sbwml/packages_lang_golang.git \
             feeds/packages/lang/golang
 
 
       # ==================================================
-      # 8. Remove OpenWrt Xray
-      #
-      # We will build Xray 25.9.11 ourselves.
-      # This prevents OpenWrt from pulling a newer
-      # incompatible Xray version.
-      # ==================================================
-      - name: Remove OpenWrt Xray package
-        working-directory: openwrt
-        run: |
-
-          rm -rf feeds/packages/net/xray-core
-
-
-      # ==================================================
-      # 9. Create Xray 25.9.11 package
-      # ==================================================
-      - name: Create Xray 25.9.11 package
-        working-directory: openwrt
-        run: |
-
-          mkdir -p package/xray-core
-
-          cat > package/xray-core/Makefile <<'EOF'
-          include $(TOPDIR)/rules.mk
-
-          PKG_NAME:=xray-core
-          PKG_VERSION:=25.9.11
-          PKG_RELEASE:=1
-
-          PKG_SOURCE_PROTO:=git
-          PKG_SOURCE_URL:=https://github.com/XTLS/Xray-core.git
-          PKG_SOURCE_VERSION:=v25.9.11
-          PKG_SOURCE_SUBDIR:=Xray-core-$(PKG_VERSION)
-
-          PKG_MAINTAINER:=Xray Project
-          PKG_LICENSE:=MPL-2.0
-          PKG_LICENSE_FILES:=LICENSE
-
-          PKG_BUILD_DEPENDS:=golang/host
-          PKG_BUILD_PARALLEL:=1
-          PKG_USE_MIPS16:=0
-          PKG_BUILD_FLAGS:=no-mips16
-
-          GO_PKG:=github.com/xtls/xray-core
-          GO_PKG_BUILD_PKG:=$(GO_PKG)/main
-
-          GO_PKG_LDFLAGS_X:= \
-              $(GO_PKG)/core.build=OpenWrt \
-              $(GO_PKG)/core.version=$(PKG_VERSION)
-
-          include $(INCLUDE_DIR)/package.mk
-          include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
-
-          define Package/xray-core
-            SECTION:=net
-            CATEGORY:=Network
-            TITLE:=Xray core
-            URL:=https://github.com/XTLS/Xray-core
-            DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle
-          endef
-
-          define Package/xray-core/description
-            Xray core proxy engine.
-          endef
-
-          define Package/xray-core/conffiles
-          /etc/xray/
-          /etc/config/xray
-          endef
-
-          define Package/xray-core/install
-            $(call GoPackage/Package/Install/Bin,$(PKG_INSTALL_DIR))
-            $(INSTALL_DIR) $(1)/usr/bin
-            $(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/main $(1)/usr/bin/xray
-          endef
-
-          $(eval $(call BuildPackage,xray-core))
-          EOF
-
-
-      # ==================================================
-      # 10. Install PassWall
-      # ==================================================
-      - name: Install PassWall
-        working-directory: openwrt
-        run: |
-
-          ./scripts/feeds install luci-app-passwall
-          ./scripts/feeds install luci-i18n-passwall-zh-cn
-
-
-      # ==================================================
-      # 11. Configure firmware
+      # 8. Configure OpenWrt
       # ==================================================
       - name: Configure OpenWrt
         working-directory: openwrt
@@ -252,7 +156,6 @@ jobs:
           # =================================================
 
           CONFIG_PACKAGE_luci-app-passwall=y
-          CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
 
 
           # =================================================
@@ -270,19 +173,28 @@ jobs:
           #
           # ONLY Xray
           #
-          # VLESS -> Xray
+          # VLESS is handled by Xray
           # =================================================
 
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
 
+
+          # =================================================
+          # Disable other proxy cores
+          # =================================================
+
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=n
+
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=n
+
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray_Plugin=n
 
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client=n
+
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Server=n
 
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client=n
+
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Server=n
 
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Simple_Obfs=n
@@ -295,39 +207,20 @@ jobs:
 
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadow_TLS=n
 
+
+          # =================================================
+          # Disable extra GeoView
+          #
+          # Keep firmware smaller
+          # =================================================
+
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Geoview=n
 
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Geodata=y
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Geodata=n
 
 
           # =================================================
-          # Xray package
-          # =================================================
-
-          CONFIG_PACKAGE_xray-core=y
-
-
-          # =================================================
-          # nftables / TProxy
-          # =================================================
-
-          CONFIG_PACKAGE_kmod-nft-socket=y
-          CONFIG_PACKAGE_kmod-nft-tproxy=y
-          CONFIG_PACKAGE_kmod-nft-nat=y
-
-          CONFIG_PACKAGE_kmod-nf-reject=y
-          CONFIG_PACKAGE_kmod-nf-reject6=y
-
-
-          # =================================================
-          # DNS
-          # =================================================
-
-          CONFIG_PACKAGE_dnsmasq-full=y
-
-
-          # =================================================
-          # PassWall dependencies
+          # PassWall required packages
           # =================================================
 
           CONFIG_PACKAGE_coreutils=y
@@ -337,21 +230,40 @@ jobs:
 
           CONFIG_PACKAGE_curl=y
 
+          CONFIG_PACKAGE_dnsmasq-full=y
+
           CONFIG_PACKAGE_ip-full=y
+
+          CONFIG_PACKAGE_microsocks=y
 
           CONFIG_PACKAGE_resolveip=y
 
           CONFIG_PACKAGE_tcping=y
 
-          CONFIG_PACKAGE_unzip=y
+          CONFIG_PACKAGE_lua=y
+
+          CONFIG_PACKAGE_luci-compat=y
+
+          CONFIG_PACKAGE_luci-lib-jsonc=y
+
+          CONFIG_PACKAGE_lyaml=y
 
 
           # =================================================
-          # V2Ray GeoData
+          # nftables / TProxy
           # =================================================
 
-          CONFIG_PACKAGE_v2ray-geoip=y
-          CONFIG_PACKAGE_v2ray-geosite=y
+          CONFIG_PACKAGE_nftables=y
+
+          CONFIG_PACKAGE_kmod-nft-socket=y
+
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+
+          CONFIG_PACKAGE_kmod-nft-nat=y
+
+          CONFIG_PACKAGE_kmod-nf-reject=y
+
+          CONFIG_PACKAGE_kmod-nf-reject6=y
 
 
           # =================================================
@@ -364,17 +276,16 @@ jobs:
 
 
       # ==================================================
-      # 12. Defconfig
+      # 9. Generate final configuration
       # ==================================================
       - name: Generate defconfig
         working-directory: openwrt
         run: |
-
           make defconfig
 
 
       # ==================================================
-      # 13. Verify configuration
+      # 10. Verify configuration
       # ==================================================
       - name: Verify configuration
         working-directory: openwrt
@@ -396,13 +307,23 @@ jobs:
           echo "=============================================="
 
           grep -E \
-            'luci-app-passwall|passwall_INCLUDE|xray-core|sing-box|v2ray-plugin' \
+            'CONFIG_PACKAGE_luci-app-passwall|passwall_INCLUDE|CONFIG_PACKAGE_xray-core' \
             .config || true
 
 
           echo
           echo "=============================================="
-          echo "GO"
+          echo "DISABLED CORES"
+          echo "=============================================="
+
+          grep -E \
+            'INCLUDE_SingBox|INCLUDE_Hysteria|INCLUDE_NaiveProxy|INCLUDE_Haproxy|INCLUDE_Shadowsocks|INCLUDE_ShadowsocksR|INCLUDE_Simple_Obfs|INCLUDE_Geoview' \
+            .config || true
+
+
+          echo
+          echo "=============================================="
+          echo "GO TOOLCHAIN"
           echo "=============================================="
 
           grep -E \
@@ -412,36 +333,36 @@ jobs:
 
           echo
           echo "=============================================="
-          echo "XRAY PACKAGE"
+          echo "XRAY"
           echo "=============================================="
 
-          grep -E \
-            'PKG_VERSION|PKG_SOURCE_VERSION' \
-            package/xray-core/Makefile
+          grep -R \
+            'PKG_VERSION' \
+            feeds/packages/net/xray-core/Makefile \
+            feeds/passwall_packages/net/xray-core/Makefile \
+            2>/dev/null || true
 
 
       # ==================================================
-      # 14. Download source
+      # 11. Download sources
       # ==================================================
       - name: Download sources
         working-directory: openwrt
         run: |
-
           make download -j4 V=s
 
 
       # ==================================================
-      # 15. Build firmware
+      # 12. Build firmware
       # ==================================================
       - name: Build firmware
         working-directory: openwrt
         run: |
-
           make -j2 V=s
 
 
       # ==================================================
-      # 16. Collect firmware
+      # 13. Collect firmware
       # ==================================================
       - name: Collect firmware
         if: success()
@@ -459,7 +380,7 @@ jobs:
 
 
       # ==================================================
-      # 17. Show firmware
+      # 14. Show firmware
       # ==================================================
       - name: Show firmware information
         if: success()
@@ -484,12 +405,12 @@ jobs:
 
 
       # ==================================================
-      # 18. Upload
+      # 15. Upload firmware
       # ==================================================
       - name: Upload firmware
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt-23.05.6-WRT1200AC-V2-PassWall-VLESS
+          name: OpenWrt-23.05.6-WRT1200AC-V2-PassWall1-VLESS
           path: firmware/
           retention-days: 30
