@@ -11,61 +11,110 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Download OpenWrt ImageBuilder
+      - name: Install dependencies
         run: |
-          wget https://downloads.openwrt.org/releases/23.05.6/targets/mvebu/cortexa9/openwrt-imagebuilder-23.05.6-mvebu-cortexa9.Linux-x86_64.tar.xz
-          tar -xf openwrt-imagebuilder-23.05.6-mvebu-cortexa9.Linux-x86_64.tar.xz
-          mv openwrt-imagebuilder-23.05.6-mvebu-cortexa9.Linux-x86_64 imagebuilder
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            gawk \
+            gettext \
+            git \
+            libncurses5-dev \
+            libssl-dev \
+            python3 \
+            rsync \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            curl \
+            xsltproc \
+            swig \
+            libelf-dev \
+            device-tree-compiler \
+            zstd
 
-      - name: Configure PassWall feed
-        working-directory: imagebuilder
+      - name: Download OpenWrt
         run: |
-          cat > repositories.conf <<'EOF'
-          src/gz openwrt_core https://downloads.openwrt.org/releases/23.05.6/targets/mvebu/cortexa9/packages
-          src/gz openwrt_base https://downloads.openwrt.org/releases/23.05.6/packages/arm_cortex-a9_vfpv3-d16/base
-          src/gz openwrt_luci https://downloads.openwrt.org/releases/23.05.6/packages/arm_cortex-a9_vfpv3-d16/luci
-          src/gz openwrt_packages https://downloads.openwrt.org/releases/23.05.6/packages/arm_cortex-a9_vfpv3-d16/packages
-          src/gz openwrt_routing https://downloads.openwrt.org/releases/23.05.6/packages/arm_cortex-a9_vfpv3-d16/routing
-          src/gz openwrt_telephony https://downloads.openwrt.org/releases/23.05.6/packages/arm_cortex-a9_vfpv3-d16/telephony
-          src/gz passwall_packages https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-23.05/arm_cortex-a9_vfpv3-d16/passwall_packages
-          src/gz passwall_luci https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-23.05/arm_cortex-a9_vfpv3-d16/passwall_luci
+          git clone --depth 1 --branch v23.05.6 \
+            https://github.com/openwrt/openwrt.git openwrt
+
+      - name: Add PassWall
+        working-directory: openwrt
+        run: |
+          echo "src-git passwall https://github.com/Openwrt-Passwall/openwrt-passwall.git;main" >> feeds.conf.default
+          echo "src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main" >> feeds.conf.default
+
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a -f
+
+      - name: Configure
+        working-directory: openwrt
+        run: |
+
+          cat > .config <<'EOF'
+
+          CONFIG_TARGET_mvebu=y
+          CONFIG_TARGET_mvebu_cortexa9=y
+          CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=y
+
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-ssl=y
+
+          CONFIG_PACKAGE_luci-app-passwall=y
+
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
+
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Hysteria=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_NaiveProxy=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Haproxy=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Server=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Server=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Simple_Obfs=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray_Plugin=n
+
+          CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y
+          CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=n
+
+          CONFIG_PACKAGE_xray-core=y
+
           EOF
 
-      - name: Build firmware
-        working-directory: imagebuilder
+          make defconfig
+
+      - name: Download
+        working-directory: openwrt
         run: |
-          make image \
-            PROFILE="linksys_wrt1200ac" \
-            PACKAGES="\
-            luci \
-            luci-ssl \
-            luci-app-firewall \
-            luci-app-opkg \
-            dnsmasq-full \
-            kmod-nft-tproxy \
-            kmod-nft-socket \
-            nftables \
-            luci-app-passwall \
-            xray-core \
-            tcping \
-            resolveip \
-            microsocks \
-            "
+          make download -j4
+
+      - name: Build
+        working-directory: openwrt
+        run: |
+          make -j2 V=s
 
       - name: Collect firmware
+        if: success()
         run: |
           mkdir -p firmware
-          cp imagebuilder/bin/targets/mvebu/cortexa9/* firmware/
-
-      - name: Show firmware
-        run: |
-          ls -lh firmware
-          sha256sum firmware/*
+          cp openwrt/bin/targets/mvebu/cortexa9/*wrt1200ac* firmware/ 2>/dev/null || true
+          cp openwrt/bin/targets/mvebu/cortexa9/sha256sums firmware/ 2>/dev/null || true
 
       - name: Upload firmware
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: OpenWrt-23.05.6-WRT1200AC-V2-PassWall
           path: firmware/
-          retention-days: 30
