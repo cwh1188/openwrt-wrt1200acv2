@@ -1,120 +1,90 @@
-name: OpenWrt 23.05.6 WRT1200AC V2 PassWall
+name: Build OpenWrt 23.05.6 for WRT1200AC V2
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 180
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            clang \
-            flex \
-            bison \
-            gawk \
-            gettext \
-            git \
-            libncurses5-dev \
-            libssl-dev \
-            python3 \
-            rsync \
-            unzip \
-            zlib1g-dev \
-            file \
-            wget \
-            curl \
-            xsltproc \
-            swig \
-            libelf-dev \
-            device-tree-compiler \
-            zstd
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget curl subversion swig time xsltproc
 
-      - name: Download OpenWrt
+      - name: Download OpenWrt 23.05.6
         run: |
-          git clone --depth 1 --branch v23.05.6 \
-            https://github.com/openwrt/openwrt.git openwrt
+          git clone --depth 1 --branch v23.05.6 https://github.com/openwrt/openwrt.git openwrt
 
-      - name: Add PassWall
+      - name: Add PassWall 1 feeds
         working-directory: openwrt
         run: |
-          echo "src-git passwall https://github.com/Openwrt-Passwall/openwrt-passwall.git;main" >> feeds.conf.default
-          echo "src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main" >> feeds.conf.default
-
-      - name: Update feeds
-        working-directory: openwrt
-        run: |
+          echo 'src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main' >> feeds.conf.default
+          echo 'src-git passwall https://github.com/Openwrt-Passwall/openwrt-passwall.git;main' >> feeds.conf.default
           ./scripts/feeds update -a
-          ./scripts/feeds install -a -f
+          ./scripts/feeds install -a
 
-      - name: Configure
+      - name: Use newer Go toolchain for Xray
         working-directory: openwrt
         run: |
+          rm -rf feeds/packages/lang/golang
+          git clone --depth 1 --branch 25.x https://github.com/sbwml/packages_lang_golang.git feeds/packages/lang/golang
 
+      - name: Configure firmware
+        working-directory: openwrt
+        run: |
           cat > .config <<'EOF'
-
           CONFIG_TARGET_mvebu=y
           CONFIG_TARGET_mvebu_cortexa9=y
           CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=y
 
           CONFIG_PACKAGE_luci=y
-          CONFIG_PACKAGE_luci-ssl=y
-
           CONFIG_PACKAGE_luci-app-passwall=y
-
+          CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
+          CONFIG_PACKAGE_xray-core=y
+          CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y
+          CONFIG_PACKAGE_dnsmasq-full=y
 
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Hysteria=n
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_NaiveProxy=n
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Haproxy=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Trojan_Plus=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Libev_Client=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client=n
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Server=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client=n
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Server=n
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_NaiveProxy=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Simple_Obfs=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray_Plugin=n
-
-          CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y
-          CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=n
-
-          CONFIG_PACKAGE_xray-core=y
-
           EOF
 
           make defconfig
 
-      - name: Download
+      - name: Verify target and PassWall
         working-directory: openwrt
         run: |
-          make download -j4
+          grep -E 'CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=|CONFIG_PACKAGE_luci-app-passwall=|CONFIG_PACKAGE_xray-core=' .config
 
-      - name: Build
+      - name: Download sources
         working-directory: openwrt
-        run: |
-          make -j2 V=s
+        run: make download -j4 V=s
+
+      - name: Build firmware
+        working-directory: openwrt
+        run: make -j2 V=s
 
       - name: Collect firmware
-        if: success()
         run: |
-          mkdir -p firmware
-          cp openwrt/bin/targets/mvebu/cortexa9/*wrt1200ac* firmware/ 2>/dev/null || true
-          cp openwrt/bin/targets/mvebu/cortexa9/sha256sums firmware/ 2>/dev/null || true
+          mkdir -p artifact
+          cp openwrt/bin/targets/mvebu/cortexa9/* artifact/
 
       - name: Upload firmware
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt-23.05.6-WRT1200AC-V2-PassWall
-          path: firmware/
+          name: openwrt-23.05.6-wrt1200acv2
+          path: artifact/
+          retention-days: 7
