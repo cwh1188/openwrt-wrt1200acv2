@@ -155,8 +155,8 @@ jobs:
           grep '^CONFIG_PACKAGE_luci-app-ttyd=y$' .config
 
           echo "===== TRANSPARENT PROXY MODE (must be Iptables=y, Nftables=n) ====="
-          grep '^CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy' .config
-          grep '^CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy' .config
+          grep '^CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy' .config || true
+          grep '^CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy' .config || echo "(Nftables_Transparent_Proxy is disabled, as expected)"
 
           if ! grep -q '^CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=y$' .config; then
             echo "ERROR: Iptables_Transparent_Proxy was NOT enabled. Build stopped."
