@@ -49,7 +49,6 @@ jobs:
       - name: Add PassWall 26.3.6
         working-directory: openwrt
         run: |
-          rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,v2ray-plugin,xray-plugin,geoview,shadow-tls}
           rm -rf feeds/luci/applications/luci-app-passwall
 
           git clone --depth 1 \
@@ -62,6 +61,8 @@ jobs:
             package/passwall-packages
 
           ./scripts/feeds update -a
+          # feeds更新完成后，直接删除geoview源码，规避Go>=1.25依赖报错
+          rm -rf feeds/packages/net/geoview
           ./scripts/feeds install -a
 
       - name: Use newer Go toolchain
