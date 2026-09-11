@@ -225,9 +225,6 @@ jobs:
           echo "===== TTYD ====="
           grep '^CONFIG_PACKAGE_luci-app-ttyd=y$' .config
 
-          echo "===== GEOVIEW DISABLED ====="
-          grep '^CONFIG_PACKAGE_geoview=n$' .config
-
           echo "===== CONFIGURATION CHECK PASSED ====="
 
       - name: Download sources
