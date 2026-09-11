@@ -12,10 +12,6 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. Build dependencies
-      # ============================================================
-
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -31,6 +27,7 @@ jobs:
             git \
             libncurses5-dev \
             libssl-dev \
+            libelf-dev \
             python3-distutils \
             rsync \
             unzip \
@@ -41,15 +38,7 @@ jobs:
             subversion \
             swig \
             time \
-            xsltproc \
-            libelf-dev \
-            libtool \
-            autoconf \
-            automake
-
-      # ============================================================
-      # 2. OpenWrt 23.05.6
-      # ============================================================
+            xsltproc
 
       - name: Download OpenWrt 23.05.6
         run: |
@@ -57,41 +46,36 @@ jobs:
             --branch v23.05.6 \
             https://github.com/openwrt/openwrt.git openwrt
 
-      # ============================================================
-      # 3. PassWall official feeds
-      # ============================================================
-
-      - name: Add PassWall feeds
+      - name: Add PassWall 26.3.6
         working-directory: openwrt
         run: |
-          echo 'src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main' >> feeds.conf.default
-          echo 'src-git passwall https://github.com/Openwrt-Passwall/openwrt-passwall.git;main' >> feeds.conf.default
+          rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,v2ray-plugin,xray-plugin,geoview,shadow-tls}
+          rm -rf feeds/luci/applications/luci-app-passwall
+
+          git clone --depth 1 \
+            --branch 26.3.6-1 \
+            https://github.com/Openwrt-Passwall/openwrt-passwall.git \
+            package/passwall-luci
+
+          git clone --depth 1 \
+            https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git \
+            package/passwall-packages
 
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ============================================================
-      # 4. Use newer Go toolchain
-      # ============================================================
-
-      - name: Use newer Go toolchain for Xray
+      - name: Use newer Go toolchain
         working-directory: openwrt
         run: |
           rm -rf feeds/packages/lang/golang
+          rm -rf package/feeds/packages/golang
 
           git clone --depth 1 \
             --branch 25.x \
             https://github.com/sbwml/packages_lang_golang.git \
             feeds/packages/lang/golang
 
-          rm -rf package/feeds/packages/golang
-
-          ./scripts/feeds update packages
-          ./scripts/feeds install golang
-
-      # ============================================================
-      # 5. Set default LuCI language
-      # ============================================================
+          ln -sf ../../feeds/packages/lang/golang package/feeds/packages/golang
 
       - name: Set default LuCI language to Chinese
         working-directory: openwrt
@@ -107,10 +91,6 @@ jobs:
 
           chmod +x files/etc/uci-defaults/99-default-lang
 
-      # ============================================================
-      # 6. Default LAN IP
-      # ============================================================
-
       - name: Set default LAN IP to 192.168.23.1
         working-directory: openwrt
         run: |
@@ -125,126 +105,43 @@ jobs:
 
           chmod +x files/etc/uci-defaults/98-lan-ip
 
-      # ============================================================
-      # 7. Configure firmware
-      # ============================================================
-
       - name: Configure firmware
         working-directory: openwrt
         run: |
 
           cat > .config <<'EOF'
 
-          # ========================================================
-          # TARGET
-          # ========================================================
-
           CONFIG_TARGET_mvebu=y
           CONFIG_TARGET_mvebu_cortexa9=y
           CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=y
 
-          # ========================================================
-          # LuCI
-          # ========================================================
-
+          # ===== LuCI 基础 =====
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
           CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
           CONFIG_PACKAGE_luci-i18n-opkg-zh-cn=y
 
-          # ========================================================
-          # PassWall
-          # ========================================================
+          # ===== 高级重启 / 双分区 =====
+          CONFIG_PACKAGE_luci-app-advanced-reboot=y
+          CONFIG_PACKAGE_luci-i18n-advanced-reboot-zh-cn=y
 
-          CONFIG_PACKAGE_luci-app-passwall=y
-          CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
-
-          # ========================================================
-          # Xray
-          #
-          # Use PassWall package tree Xray.
-          # DO NOT use old OpenWrt feeds/packages Xray.
-          # ========================================================
-
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
-          CONFIG_PACKAGE_xray-core=y
-
-          # ========================================================
-          # PassWall transparent proxy
-          #
-          # Do not force the old iptables-only configuration.
-          # Keep nftables/TProxy support available.
-          # ========================================================
-
-          CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=y
-          CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y
-
-          # ========================================================
-          # nftables / TProxy kernel modules
-          # ========================================================
-
-          CONFIG_PACKAGE_kmod-nft-core=y
-          CONFIG_PACKAGE_kmod-nft-fib=y
-          CONFIG_PACKAGE_kmod-nft-nat=y
-          CONFIG_PACKAGE_kmod-nft-offload=y
-          CONFIG_PACKAGE_kmod-nft-socket=y
-          CONFIG_PACKAGE_kmod-nft-tproxy=y
-
-          # ========================================================
-          # TUN
-          # ========================================================
-
-          CONFIG_PACKAGE_kmod-tun=y
-
-          # ========================================================
-          # DNS
-          #
-          # PassWall requires dnsmasq-full.
-          # ========================================================
-
-          CONFIG_PACKAGE_dnsmasq=n
-          CONFIG_PACKAGE_dnsmasq-full=y
-
-          # ========================================================
-          # Web terminal
-          # ========================================================
-
+          # ===== Web 终端 =====
           CONFIG_PACKAGE_luci-app-ttyd=y
           CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
 
-          # ========================================================
-          # USB / storage
-          # ========================================================
+          # ===== PassWall =====
+          CONFIG_PACKAGE_luci-app-passwall=y
+          CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
 
-          CONFIG_PACKAGE_block-mount=y
-          CONFIG_PACKAGE_kmod-usb-core=y
-          CONFIG_PACKAGE_kmod-usb2=y
-          CONFIG_PACKAGE_kmod-usb-storage=y
-          CONFIG_PACKAGE_kmod-fs-ext4=y
+          # 使用 Sing-box
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=y
+          CONFIG_PACKAGE_sing-box=y
 
-          # ========================================================
-          # Python
-          # ========================================================
+          # 不使用 Xray
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=n
+          CONFIG_PACKAGE_xray-core=n
 
-          CONFIG_PACKAGE_python3=y
-          CONFIG_PACKAGE_python3-base=y
-          CONFIG_PACKAGE_python3-light=y
-
-          # ========================================================
-          # Network tools
-          # ========================================================
-
-          CONFIG_PACKAGE_curl=y
-          CONFIG_PACKAGE_wget-ssl=y
-          CONFIG_PACKAGE_ca-bundle=y
-          CONFIG_PACKAGE_ca-certificates=y
-          CONFIG_PACKAGE_ip-full=y
-
-          # ========================================================
-          # Disable unnecessary proxy cores
-          # ========================================================
-
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=n
+          # 不使用其他代理核心
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Hysteria=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Trojan_Plus=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Libev_Client=n
@@ -255,56 +152,51 @@ jobs:
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=n
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray_Plugin=n
 
+          # ===== PassWall DNS =====
+          CONFIG_PACKAGE_dnsmasq=n
+          CONFIG_PACKAGE_dnsmasq-full=y
+          CONFIG_PACKAGE_chinadns-ng=y
+          CONFIG_PACKAGE_dns2socks=y
+          CONFIG_PACKAGE_ipt2socks=y
+
+          # ===== nftables / TProxy =====
+          CONFIG_PACKAGE_firewall4=y
+          CONFIG_PACKAGE_nftables-json=y
+          CONFIG_PACKAGE_kmod-nf-socket=y
+          CONFIG_PACKAGE_kmod-nf-tproxy=y
+          CONFIG_PACKAGE_kmod-nft-socket=y
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_kmod-tun=y
+
+          # ===== 基础网络 =====
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_ca-bundle=y
+          CONFIG_PACKAGE_tcpdump-mini=y
+
           EOF
 
-          # ========================================================
-          # Generate final configuration
-          # ========================================================
-
           make defconfig
-
-      # ============================================================
-      # 8. Verify configuration
-      # ============================================================
 
       - name: Verify configuration
         working-directory: openwrt
         run: |
 
-          echo "=================================================="
-          echo " TARGET"
-          echo "=================================================="
-
+          echo "===== TARGET ====="
           grep '^CONFIG_TARGET_mvebu_cortexa9_DEVICE_linksys_wrt1200ac=y$' .config
 
-          echo
-          echo "=================================================="
-          echo " PASSWALL"
-          echo "=================================================="
-
+          echo "===== PASSWALL ====="
           grep '^CONFIG_PACKAGE_luci-app-passwall=y$' .config
-          grep '^CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y$' .config
 
-          echo
-          echo "=================================================="
-          echo " XRAY"
-          echo "=================================================="
+          echo "===== SING-BOX ====="
+          grep '^CONFIG_PACKAGE_sing-box=y$' .config
 
-          grep '^CONFIG_PACKAGE_xray-core=y$' .config
+          echo "===== XRAY MUST BE DISABLED ====="
+          if grep -q '^CONFIG_PACKAGE_xray-core=y$' .config; then
+            echo "ERROR: Xray is enabled."
+            exit 1
+          fi
 
-          echo
-          echo "=================================================="
-          echo " NFTABLES / TPROXY"
-          echo "=================================================="
-
-          grep '^CONFIG_PACKAGE_kmod-nft-socket=y$' .config
-          grep '^CONFIG_PACKAGE_kmod-nft-tproxy=y$' .config
-
-          echo
-          echo "=================================================="
-          echo " DNSMASQ"
-          echo "=================================================="
-
+          echo "===== DNSMASQ ====="
           grep -E '^CONFIG_PACKAGE_dnsmasq(-full)?=' .config
 
           if grep -q '^CONFIG_PACKAGE_dnsmasq=y$' .config; then
@@ -317,60 +209,30 @@ jobs:
             exit 1
           fi
 
-          echo
-          echo "=================================================="
-          echo " XRAY PACKAGE SOURCE"
-          echo "=================================================="
+          echo "===== TPROXY ====="
+          grep '^CONFIG_PACKAGE_kmod-nf-socket=y$' .config
+          grep '^CONFIG_PACKAGE_kmod-nf-tproxy=y$' .config
+          grep '^CONFIG_PACKAGE_kmod-nft-socket=y$' .config
+          grep '^CONFIG_PACKAGE_kmod-nft-tproxy=y$' .config
+          grep '^CONFIG_PACKAGE_kmod-tun=y$' .config
 
-          find package/feeds -path '*xray-core/Makefile' -print 2>/dev/null || true
-          find package/passwall-packages -path '*xray-core/Makefile' -print 2>/dev/null || true
+          echo "===== ADVANCED REBOOT ====="
+          grep '^CONFIG_PACKAGE_luci-app-advanced-reboot=y$' .config
 
-          echo
-          echo "=================================================="
-          echo " XRAY VERSION"
-          echo "=================================================="
+          echo "===== TTYD ====="
+          grep '^CONFIG_PACKAGE_luci-app-ttyd=y$' .config
 
-          grep -R 'PKG_VERSION' \
-            package/passwall-packages/xray-core/Makefile \
-            package/feeds/passwall_packages/xray-core/Makefile \
-            2>/dev/null | head -10 || true
-
-          echo
-          echo "=================================================="
-          echo " PASSWALL VERSION"
-          echo "=================================================="
-
-          grep -E 'PKG_VERSION|PKG_RELEASE' \
-            package/passwall-luci/luci-app-passwall/Makefile \
-            package/feeds/passwall/luci-app-passwall/Makefile \
-            2>/dev/null | head -10 || true
-
-          echo
-          echo "=================================================="
-          echo " CONFIGURATION CHECK PASSED"
-          echo "=================================================="
-
-      # ============================================================
-      # 9. Download sources
-      # ============================================================
+          echo "===== CONFIGURATION CHECK PASSED ====="
 
       - name: Download sources
         working-directory: openwrt
         run: |
           make download -j4 V=s
 
-      # ============================================================
-      # 10. Build
-      # ============================================================
-
       - name: Build firmware
         working-directory: openwrt
         run: |
           make -j2 V=s
-
-      # ============================================================
-      # 11. Collect firmware
-      # ============================================================
 
       - name: Collect firmware
         run: |
@@ -381,19 +243,12 @@ jobs:
             -type f \
             -exec cp {} artifact/ \;
 
-          echo "=================================================="
-          echo " FIRMWARE FILES"
-          echo "=================================================="
-
+          echo "===== FIRMWARE FILES ====="
           ls -lh artifact/
-
-      # ============================================================
-      # 12. Upload firmware
-      # ============================================================
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-23.05.6-wrt1200acv2-passwall-vless
+          name: openwrt-23.05.6-wrt1200acv2-passwall-singbox
           path: artifact/
           retention-days: 7
