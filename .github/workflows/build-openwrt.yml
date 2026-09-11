@@ -64,7 +64,6 @@ jobs:
             https://github.com/sbwml/packages_lang_golang.git \
             feeds/packages/lang/golang
 
-      # 首次开机默认切换为中文界面
       - name: Set default LuCI language to Chinese
         working-directory: openwrt
         run: |
@@ -77,7 +76,6 @@ jobs:
           EOF
           chmod +x files/etc/uci-defaults/99-default-lang
 
-      # 设置默认局域网 IP 为 192.168.23.1
       - name: Set default LAN IP to 192.168.23.1
         working-directory: openwrt
         run: |
@@ -111,7 +109,8 @@ jobs:
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
           CONFIG_PACKAGE_xray-core=y
 
-          # 关闭新版 nftables 透明代理方案（依赖未发布的 Xray 新特性，改用稳定的传统方案）
+          # 改用传统 iptables 透明代理方案（兼容当前稳定版 Xray），关闭新版 nftables 方案
+          CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=y
           CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=n
 
           # 网页终端
@@ -155,13 +154,24 @@ jobs:
           echo "===== TTYD ====="
           grep '^CONFIG_PACKAGE_luci-app-ttyd=y$' .config
 
-          echo "===== NFTABLES TRANSPARENT PROXY (should be disabled) ====="
-          grep '^CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy' .config || true
+          echo "===== TRANSPARENT PROXY MODE (must be Iptables=y, Nftables=n) ====="
+          grep '^CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy' .config
+          grep '^CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy' .config
+
+          if ! grep -q '^CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=y$' .config; then
+            echo "ERROR: Iptables_Transparent_Proxy was NOT enabled. Build stopped."
+            exit 1
+          fi
+
+          if grep -q '^CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y$' .config; then
+            echo "ERROR: Nftables_Transparent_Proxy is still enabled. Build stopped."
+            exit 1
+          fi
+
+          echo "TRANSPARENT PROXY MODE CHECK PASSED"
 
           echo "===== DNSMASQ ====="
           grep -E '^CONFIG_PACKAGE_dnsmasq(-full)?=' .config || true
-
-          echo "===== CHECK DNSMASQ CONFLICT ====="
 
           if grep -q '^CONFIG_PACKAGE_dnsmasq=y$' .config; then
             echo "ERROR: normal dnsmasq is enabled."
