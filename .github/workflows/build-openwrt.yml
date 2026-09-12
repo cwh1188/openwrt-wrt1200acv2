@@ -46,27 +46,18 @@ jobs:
             --branch v23.05.6 \
             https://github.com/openwrt/openwrt.git openwrt
 
-      - name: Add PassWall 26.3.6
+      - name: Add PassWall LuCI ONLY (不引入passwall-packages，避开geoview)
         working-directory: openwrt
         run: |
           rm -rf feeds/luci/applications/luci-app-passwall
-
+          # 只拉取luci界面代码，不再拉passwall-packages（这个仓库是本次所有Go报错根源）
           git clone --depth 1 \
             --branch 26.3.6-1 \
             https://github.com/Openwrt-Passwall/openwrt-passwall.git \
             package/passwall-luci
 
-          git clone --depth 1 \
-            https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git \
-            package/passwall-packages
-
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-
-          # 删除geoview源码与链接，解决go版本依赖报错
-          rm -rf package/passwall-packages/geoview
-          rm -rf package/feeds/packages/geoview
-          rm -rf feeds/packages/net/geoview
 
       - name: Use newer Go toolchain
         working-directory: openwrt
@@ -133,12 +124,12 @@ jobs:
           CONFIG_PACKAGE_luci-app-ttyd=y
           CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
 
-          # ===== PassWall =====
+          # ===== PassWall 界面，关闭GeoView =====
           CONFIG_PACKAGE_luci-app-passwall=y
           CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_GeoView=n
 
-          # 使用 Sing-box，支持VLESS
+          # 使用 feeds 自带 Sing-box，支持VLESS
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=y
           CONFIG_PACKAGE_sing-box=y
 
