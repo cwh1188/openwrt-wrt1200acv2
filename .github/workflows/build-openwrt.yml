@@ -60,12 +60,13 @@ jobs:
             https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git \
             package/passwall-packages
 
-          # 关键：删除passwall-packages里面的geoview源码，解决Go版本报错
-          rm -rf package/passwall-packages/geoview
-
           ./scripts/feeds update -a
-          rm -rf feeds/packages/net/geoview
           ./scripts/feeds install -a
+
+          # ✅【顺序关键】feeds install完成之后，删除geoview源码，彻底移除符号链接
+          rm -rf package/passwall-packages/geoview
+          rm -rf package/feeds/packages/geoview
+          rm -rf feeds/packages/net/geoview
 
       - name: Use newer Go toolchain
         working-directory: openwrt
@@ -135,6 +136,7 @@ jobs:
           # ===== PassWall =====
           CONFIG_PACKAGE_luci-app-passwall=y
           CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
+          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_GeoView=n
 
           # 使用 Sing-box，支持VLESS
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=y
@@ -176,10 +178,14 @@ jobs:
           CONFIG_PACKAGE_ca-bundle=y
           CONFIG_PACKAGE_tcpdump-mini=y
 
+          # 彻底关闭geoview包
+          CONFIG_PACKAGE_geoview=n
+
           EOF
 
           make defconfig
           sed -i 's/CONFIG_PACKAGE_geoview=y/CONFIG_PACKAGE_geoview=n/g' .config
+          sed -i 's/CONFIG_PACKAGE_luci-app-passwall_INCLUDE_GeoView=y/CONFIG_PACKAGE_luci-app-passwall_INCLUDE_GeoView=n/g' .config
 
       - name: Verify configuration
         working-directory: openwrt
