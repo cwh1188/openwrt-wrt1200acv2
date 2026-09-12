@@ -63,7 +63,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-          # ✅【顺序关键】feeds install完成之后，删除geoview源码，彻底移除符号链接
+          # 删除geoview源码与链接，解决go版本依赖报错
           rm -rf package/passwall-packages/geoview
           rm -rf package/feeds/packages/geoview
           rm -rf feeds/packages/net/geoview
@@ -227,10 +227,10 @@ jobs:
           grep '^CONFIG_PACKAGE_kmod-tun=y$' .config
 
           echo "===== ADVANCED REBOOT ====="
-          grep '^CONFIG_PACKAGE_luci-app-advanced-reboot=y$'
+          grep '^CONFIG_PACKAGE_luci-app-advanced-reboot=y$' .config
 
           echo "===== TTYD ====="
-          grep '^CONFIG_PACKAGE_luci-app-ttyd=y$'
+          grep '^CONFIG_PACKAGE_luci-app-ttyd=y$' .config
 
           echo "===== CONFIGURATION CHECK PASSED ====="
 
